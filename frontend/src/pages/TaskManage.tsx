@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type Sector, type Shift, type Task, type TaskCreate, type User } from '../services/api';
 import { useA11y } from '../contexts/A11yContext';
 import { Speakable } from '../components/Speakable';
+import { getCached, setCached } from '../lib/offlineCache';
+import { isOnline } from '../lib/offline';
 
 const RECURRENCE_OPTIONS = [
   { value: 'single', label: 'Única' },
@@ -32,23 +34,51 @@ export function TaskManage() {
     user_id: null,
   });
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const load = () => {
-    Promise.all([
-      api.tasks.list({ all: true }),
-      api.sectors.list(true),
-      api.shifts.list(true),
-      api.users.list(true),
-    ]).then(([t, s, sh, u]) => {
+  const load = useCallback(async () => {
+    try {
+      const [t, s, sh, u] = await Promise.all([
+        api.tasks.list({ all: true }),
+        api.sectors.list(true),
+        api.shifts.list(true),
+        api.users.list(true),
+      ]);
       setTasks(t.data);
       setSectors(s.data);
       setShifts(sh.data);
       setUsers(u.data.filter((x) => x.role === 'employee'));
-    }).finally(() => setLoading(false));
-  };
+      if (isOnline()) {
+        setCached('tasks-all', t.data);
+        setCached('sectors', s.data);
+        setCached('shifts', sh.data);
+        setCached('users', u.data);
+      }
+    } catch {
+      if (!isOnline()) {
+        const [cachedTasks, cachedSectors, cachedShifts, cachedUsers] = [
+          getCached<Task[]>('tasks-all'),
+          getCached<Sector[]>('sectors'),
+          getCached<Shift[]>('shifts'),
+          getCached<User[]>('users'),
+        ];
+        if (cachedTasks) setTasks(cachedTasks);
+        if (cachedSectors) setSectors(cachedSectors);
+        if (cachedShifts) setShifts(cachedShifts);
+        if (cachedUsers) setUsers(cachedUsers.filter((x) => x.role === 'employee'));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    const onOnline = () => load();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [load]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

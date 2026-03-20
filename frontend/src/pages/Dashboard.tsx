@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type PendingTask, type Sector, type Shift, type TaskLog, type User } from '../services/api';
+import { api, type PendingTask, type RankingItem, type Sector, type Shift, type Task, type TaskLog, type User } from '../services/api';
 import { getCached, setCached } from '../lib/offlineCache';
 import { isOnline } from '../lib/offline';
 
@@ -22,29 +22,88 @@ export function Dashboard() {
   useEffect(() => {
     const params: Record<string, string> = { date };
     if (filterUser) params.user_id = filterUser;
-    api.taskLogs.list(params as { date?: string; user_id?: number }).then((r) => setLogs(r.data));
+    const cacheKey = `taskLogs-dashboard-${date}-${filterUser || 'all'}`;
+    const load = async () => {
+      try {
+        const r = await api.taskLogs.list(params as { date?: string; user_id?: number });
+        setLogs(r.data);
+        if (isOnline()) setCached(cacheKey, r.data);
+      } catch {
+        if (!isOnline()) {
+          const cached = getCached<TaskLog[]>(cacheKey);
+          if (cached) setLogs(cached);
+        } else setLogs([]);
+      }
+    };
+    load();
   }, [date, filterUser]);
 
   useEffect(() => {
-    Promise.all([api.users.list(), api.sectors.list(), api.shifts.list(), api.tasks.list({ all: true })]).then(
-      ([u, s, sh, t]) => {
+    const load = async () => {
+      try {
+        const [u, s, sh, t] = await Promise.all([api.users.list(), api.sectors.list(), api.shifts.list(), api.tasks.list({ all: true })]);
         setUsers(u.data);
         setSectors(s.data);
         setShifts(sh.data);
         setTasks(t.data.map((x) => ({ id: x.id, name: x.name })));
+        if (isOnline()) {
+          setCached('users', u.data);
+          setCached('sectors', s.data);
+          setCached('shifts', sh.data);
+          setCached('tasks-all', t.data);
+        }
+      } catch {
+        if (!isOnline()) {
+          const [cachedUsers, cachedSectors, cachedShifts, cachedTasks] = [
+            getCached<User[]>('users'),
+            getCached<Sector[]>('sectors'),
+            getCached<Shift[]>('shifts'),
+            getCached<Task[]>('tasks-all'),
+          ];
+          if (cachedUsers) setUsers(cachedUsers);
+          if (cachedSectors) setSectors(cachedSectors);
+          if (cachedShifts) setShifts(cachedShifts);
+          if (cachedTasks) setTasks(cachedTasks.map((x) => ({ id: x.id, name: x.name })));
+        }
       }
-    );
+    };
+    load();
   }, []);
 
   useEffect(() => {
-    api.pendingTasks.list().then((r) => {
-      setPendingTasks(r.data);
-      setPendingDate(r.date);
-    }).catch(() => {});
+    const load = async () => {
+      try {
+        const r = await api.pendingTasks.list();
+        setPendingTasks(r.data);
+        setPendingDate(r.date);
+        if (isOnline()) setCached('pendingTasks', { data: r.data, date: r.date });
+      } catch {
+        if (!isOnline()) {
+          const cached = getCached<{ data: PendingTask[]; date: string }>('pendingTasks');
+          if (cached) {
+            setPendingTasks(cached.data);
+            setPendingDate(cached.date);
+          }
+        }
+      }
+    };
+    load();
   }, []);
 
   useEffect(() => {
-    api.users.ranking('week').then(setRanking).catch(() => {});
+    const load = async () => {
+      try {
+        const r = await api.users.ranking('week');
+        setRanking(r);
+        if (isOnline()) setCached('ranking-week', r);
+      } catch {
+        if (!isOnline()) {
+          const cached = getCached<{ period: string; data: RankingItem[] }>('ranking-week');
+          if (cached) setRanking(cached);
+        }
+      }
+    };
+    load();
   }, []);
 
   const filteredUsers = users.filter((u) => {
@@ -56,6 +115,41 @@ export function Dashboard() {
   useEffect(() => {
     setLoading(false);
   }, [logs]);
+
+  useEffect(() => {
+    const onOnline = () => {
+      const params: Record<string, string> = { date };
+      if (filterUser) params.user_id = filterUser;
+      const cacheKey = `taskLogs-dashboard-${date}-${filterUser || 'all'}`;
+      Promise.all([
+        api.taskLogs.list(params as { date?: string; user_id?: number }),
+        api.users.list(),
+        api.sectors.list(),
+        api.shifts.list(),
+        api.tasks.list({ all: true }),
+        api.pendingTasks.list(),
+        api.users.ranking('week'),
+      ]).then(([logsRes, u, s, sh, t, pendingRes, rankRes]) => {
+        setLogs(logsRes.data);
+        setUsers(u.data);
+        setSectors(s.data);
+        setShifts(sh.data);
+        setTasks(t.data.map((x) => ({ id: x.id, name: x.name })));
+        setPendingTasks(pendingRes.data);
+        setPendingDate(pendingRes.date);
+        setRanking(rankRes);
+        setCached(cacheKey, logsRes.data);
+        setCached('users', u.data);
+        setCached('sectors', s.data);
+        setCached('shifts', sh.data);
+        setCached('tasks-all', t.data);
+        setCached('pendingTasks', { data: pendingRes.data, date: pendingRes.date });
+        setCached('ranking-week', rankRes);
+      }).catch(() => {});
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [date, filterUser]);
 
   const completed = logs.filter((l) => l.status === 'completed').length;
   const total = logs.length;

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type Sector, type Shift, type User } from '../services/api';
 import { Speakable } from '../components/Speakable';
+import { getCached, setCached } from '../lib/offlineCache';
+import { isOnline } from '../lib/offline';
 
 export function Settings() {
   const [sectors, setSectors] = useState<Sector[]>([]);
@@ -16,21 +18,46 @@ export function Settings() {
     sector_id: null as number | null, shift_id: null as number | null,
   });
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const load = () => {
-    Promise.all([
-      api.sectors.list(true),
-      api.shifts.list(true),
-      api.users.list(true),
-    ]).then(([s, sh, u]) => {
+  const load = useCallback(async () => {
+    try {
+      const [s, sh, u] = await Promise.all([
+        api.sectors.list(true),
+        api.shifts.list(true),
+        api.users.list(true),
+      ]);
       setSectors(s.data);
       setShifts(sh.data);
       setUsers(u.data);
-    }).finally(() => setLoading(false));
-  };
+      if (isOnline()) {
+        setCached('sectors', s.data);
+        setCached('shifts', sh.data);
+        setCached('users', u.data);
+      }
+    } catch {
+      if (!isOnline()) {
+        const [cachedSectors, cachedShifts, cachedUsers] = [
+          getCached<Sector[]>('sectors'),
+          getCached<Shift[]>('shifts'),
+          getCached<User[]>('users'),
+        ];
+        if (cachedSectors) setSectors(cachedSectors);
+        if (cachedShifts) setShifts(cachedShifts);
+        if (cachedUsers) setUsers(cachedUsers);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    const onOnline = () => load();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [load]);
 
   const handleCreateSector = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,5 +1,22 @@
 # Changelog
 
+## [2025-03-20] (atualização 16 - Offline completo e persistência de login)
+
+### Added
+
+- **Cache offline**: `lib/offlineCache.ts` para armazenar dados da API em localStorage (tasks, taskLogs, users, sectors, shifts, etc.)
+- **Dados offline**: Checklist, Dashboard, TaskManage e Settings carregam dados do cache quando offline
+- **Desfazer offline**: botão "Desfazer" na Checklist funciona offline e sincroniza ao reconectar
+- **Sincronização ao reconectar**: ao voltar online, dados são atualizados automaticamente em todas as páginas
+
+### Changed
+
+- **AuthContext**: usuário permanece logado ao fechar/reiniciar o app; quando offline, usa usuário em cache em vez de deslogar
+- **Persistência de login**: token e usuário em localStorage; sessão restaurada mesmo sem rede
+- **api.ts**: export de task-logs usa `API_BASE` para consistência com subdomínio de produção
+
+---
+
 ## [2025-03-20] (atualização 15 - Offline e 404)
 
 ### Fixed

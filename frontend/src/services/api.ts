@@ -62,8 +62,7 @@ export const api = {
     export: async (params?: { date?: string; user_id?: number; task_id?: number; status?: string; format?: string }) => {
       const sp = new URLSearchParams(params as Record<string, string>);
       const token = getToken();
-      const base = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : window.location.origin) + '/api';
-      const res = await fetch(`${base}/task-logs/export?${sp.toString()}`, {
+      const res = await fetch(`${API_BASE}/task-logs/export?${sp.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error('Erro ao exportar');
