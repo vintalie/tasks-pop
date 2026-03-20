@@ -1,0 +1,42 @@
+# Dependencies
+node_modules
+vendor
+
+# Environment files (sensitive)
+.env
+.env.*
+!.env.example
+
+# Build outputs
+dist
+dist-ssr
+public/build
+public/hot
+public/storage
+
+# Logs
+*.log
+logs
+
+# IDE / Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Laravel / PHP
+.phpunit.result.cache
+.phpunit.cache
+storage/*.key
+storage/pail
+Homestead.json
+Homestead.yaml
+
+# Misc
+Thumbs.db
+*.local
