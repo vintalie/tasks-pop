@@ -1,5 +1,13 @@
 # Changelog
 
+## [2025-03-20] (atualização 17 - .cpanel.yml)
+
+### Added
+
+- **.cpanel.yml**: configuração para deploy via Git no cPanel; tasks mínimas (echo) pois document roots apontam para api/public e frontend/dist dentro do repositório
+
+---
+
 ## [2025-03-20] (atualização 16 - Offline completo e persistência de login)
 
 ### Added

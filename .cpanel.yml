@@ -1,0 +1,7 @@
+---
+# Tasks POP - Deploy via Git cPanel
+# Document roots apontam para api/public e frontend/dist dentro do repo.
+# Nenhum comando de build ou artisan é executado.
+deployment:
+  tasks:
+    - echo "Deploy concluído - arquivos atualizados via git pull"
