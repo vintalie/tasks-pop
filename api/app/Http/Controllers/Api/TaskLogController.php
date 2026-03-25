@@ -3,11 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Exports\TaskLogsExport;
+use App\Helpers\StorageUrlHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Task;
 use App\Models\TaskLog;
+use App\Events\TaskLogCreated;
+use App\Jobs\SendSectorCompletedNotification;
+use App\Models\Sector;
 use App\Services\MediaStorageService;
 use App\Services\PhotoStorageService;
+use App\Services\SectorCompletionService;
+use App\Services\TaskVisibilityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -18,7 +24,9 @@ class TaskLogController extends Controller
 {
     public function __construct(
         protected MediaStorageService $mediaStorage,
-        protected PhotoStorageService $photoStorage
+        protected PhotoStorageService $photoStorage,
+        protected TaskVisibilityService $taskVisibility,
+        protected SectorCompletionService $sectorCompletion
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -85,6 +93,14 @@ class TaskLogController extends Controller
 
         $task = Task::findOrFail($validated['task_id']);
         $user = $request->user();
+
+        if (! $this->taskVisibility->canUserAccessTask($user, $task)) {
+            return response()->json([
+                'message' => 'Você não tem permissão para registrar esta tarefa.',
+                'errors' => ['task_id' => ['Tarefa não encontrada ou não visível para você.']],
+            ], 403);
+        }
+
         $logDate = now()->toDateString();
 
         if ($validated['status'] === 'completed' && $task->min_interval_minutes) {
@@ -112,6 +128,16 @@ class TaskLogController extends Controller
             ], 422);
         }
 
+        if ($validated['status'] === 'completed' && $task->requires_observation) {
+            $observation = trim($validated['observation'] ?? '');
+            if ($observation === '') {
+                return response()->json([
+                    'message' => 'Esta tarefa exige uma observação.',
+                    'errors' => ['observation' => ['Observação obrigatória para esta tarefa.']],
+                ], 422);
+            }
+        }
+
         $mediaPaths = [];
         if ($request->hasFile('photo')) {
             $stored = $this->mediaStorage->store($request->file('photo'));
@@ -126,22 +152,48 @@ class TaskLogController extends Controller
             }
         }
 
-        $log = TaskLog::updateOrCreate(
-            [
+        $log = TaskLog::where('user_id', $user->id)
+            ->where('task_id', $validated['task_id'])
+            ->whereDate('log_date', $logDate)
+            ->first();
+
+        $attributes = [
+            'status' => $validated['status'],
+            'observation' => $validated['observation'] ?? null,
+            'photo_path' => ! empty($mediaPaths) ? ($mediaPaths[0]['url'] ?? null) : null,
+            'media_paths' => ! empty($mediaPaths) ? $mediaPaths : null,
+            'completed_at' => $validated['status'] === 'completed' ? now() : null,
+        ];
+
+        if ($log) {
+            $log->update($attributes);
+        } else {
+            $log = TaskLog::create([
                 'user_id' => $user->id,
                 'task_id' => $validated['task_id'],
                 'log_date' => $logDate,
-            ],
-            [
-                'status' => $validated['status'],
-                'observation' => $validated['observation'] ?? null,
-                'photo_path' => ! empty($mediaPaths) ? ($mediaPaths[0]['url'] ?? null) : null,
-                'media_paths' => ! empty($mediaPaths) ? $mediaPaths : null,
-                'completed_at' => $validated['status'] === 'completed' ? now() : null,
-            ]
-        );
+                ...$attributes,
+            ]);
+        }
 
         $log->load(['task', 'user']);
+
+        if (config('broadcasting.default') !== 'null') {
+            TaskLogCreated::dispatch(
+                $log->id,
+                $task->id,
+                $task->sector_id,
+                $task->shift_id,
+                $logDate
+            );
+        }
+
+        if ($validated['status'] === 'completed' && $task->sector_id) {
+            $sector = Sector::find($task->sector_id);
+            if ($sector && $this->sectorCompletion->isSectorCompleted($task->sector_id, $logDate)) {
+                SendSectorCompletedNotification::dispatch($sector, $logDate);
+            }
+        }
 
         return response()->json([
             'data' => [
@@ -224,26 +276,66 @@ class TaskLogController extends Controller
     protected function collectMediaFiles(Request $request): array
     {
         $files = $request->file('media');
-        if (! is_array($files)) {
-            return [];
+
+        if (is_array($files)) {
+            $filtered = array_values(array_filter($files, fn ($f) => $f instanceof UploadedFile));
+            if (! empty($filtered)) {
+                return $filtered;
+            }
         }
 
-        return array_filter($files, fn ($f) => $f instanceof UploadedFile);
+        if ($files instanceof UploadedFile) {
+            return [$files];
+        }
+
+        // Fallback: FormData com media[] pode chegar como media.0, media.1 em alguns casos
+        $collected = [];
+        $i = 0;
+        while (($f = $request->file("media.{$i}")) instanceof UploadedFile) {
+            $collected[] = $f;
+            $i++;
+        }
+
+        return $collected;
     }
 
     protected function getMediaArray(TaskLog $log): array
     {
         $media = $log->media_paths;
         if (is_array($media) && ! empty($media)) {
-            return $media;
+            return $this->normalizeMediaUrls($media);
         }
 
         $url = $this->photoStorage->url($log->photo_path);
         if ($url) {
-            return [['url' => $url, 'type' => 'image']];
+            return [['url' => StorageUrlHelper::fixStorageUrl($url), 'type' => 'image']];
         }
 
         return [];
+    }
+
+    /**
+     * Garante que todas as URLs de mídia sejam absolutas para o frontend exibir corretamente.
+     */
+    protected function normalizeMediaUrls(array $media): array
+    {
+        return array_map(function (array $item): array {
+            $url = $item['url'] ?? $item['path'] ?? null;
+            if ($url && ! str_starts_with((string) $url, 'http://') && ! str_starts_with((string) $url, 'https://')) {
+                $url = $this->mediaStorage->url($url);
+            }
+            $url = $url ? StorageUrlHelper::fixStorageUrl($url) : '';
+
+            return [
+                'url' => $url,
+                'type' => $item['type'] ?? 'image',
+            ];
+        }, $media);
+    }
+
+    public function getMediaArrayForLog(TaskLog $log): array
+    {
+        return $this->getMediaArray($log);
     }
 
     protected function getFirstMediaUrl(TaskLog $log): ?string

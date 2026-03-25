@@ -1,18 +1,10 @@
-# Dependencies
-node_modules
-vendor
 
 # Environment files (sensitive)
 .env
 .env.*
 !.env.example
 
-# Build outputs
-dist
-dist-ssr
-public/build
-public/hot
-public/storage
+
 
 # Logs
 *.log

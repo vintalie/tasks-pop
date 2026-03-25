@@ -77,6 +77,11 @@ export const api = {
       a.click();
       URL.revokeObjectURL(url);
     },
+    correct: (id: number, data: { status: 'completed' | 'pending'; correction_reason: string }) =>
+      request<{ data: { id: number; status: string; corrected_at: string } }>(`/task-logs/${id}/correct`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
     create: (data: { task_id: number; status: string; observation?: string; photo?: File; media?: File[] }) => {
       const formData = new FormData();
       formData.append('task_id', String(data.task_id));
@@ -164,6 +169,7 @@ export interface TaskCreate {
   requires_photo?: boolean;
   requires_observation?: boolean;
   min_interval_minutes?: number | null;
+  notification_time?: string | null;
   order?: number;
   sector_id?: number | null;
   shift_id?: number | null;
@@ -205,6 +211,7 @@ export interface Task {
   requires_photo: boolean;
   requires_observation?: boolean;
   min_interval_minutes?: number | null;
+  notification_time?: string | null;
   order: number;
   active?: boolean;
   sector?: { id: number; name: string } | null;

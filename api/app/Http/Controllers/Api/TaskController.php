@@ -4,11 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Task;
+use App\Services\TaskVisibilityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TaskController extends Controller
 {
+    public function __construct(
+        protected TaskVisibilityService $taskVisibility
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -53,8 +58,11 @@ class TaskController extends Controller
         return response()->json(['data' => $tasks]);
     }
 
-    public function show(Task $task): JsonResponse
+    public function show(Request $request, Task $task): JsonResponse
     {
+        if (! $this->taskVisibility->canUserAccessTask($request->user(), $task)) {
+            abort(404);
+        }
         $task->load(['sector', 'shift', 'user']);
         return response()->json($task);
     }
@@ -70,6 +78,7 @@ class TaskController extends Controller
             'requires_photo' => 'boolean',
             'requires_observation' => 'boolean',
             'min_interval_minutes' => 'nullable|integer|min:0',
+            'notification_time' => 'nullable|date_format:H:i',
             'order' => 'integer',
             'sector_id' => 'nullable|exists:sectors,id',
             'shift_id' => 'nullable|exists:shifts,id',
@@ -97,6 +106,7 @@ class TaskController extends Controller
             'requires_photo' => 'boolean',
             'requires_observation' => 'boolean',
             'min_interval_minutes' => 'nullable|integer|min:0',
+            'notification_time' => 'nullable|date_format:H:i',
             'order' => 'integer',
             'active' => 'boolean',
             'sector_id' => 'nullable|exists:sectors,id',

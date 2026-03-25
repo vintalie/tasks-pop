@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\SectorController;
 use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\TaskController;
@@ -10,6 +11,10 @@ use App\Http\Controllers\Api\VoiceAssistantController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login']);
+Route::get('/vapid-public-key', [\App\Http\Controllers\Api\VapidKeysController::class, '__invoke']);
+
+Route::get('/debug/media', [\App\Http\Controllers\Api\DebugMediaController::class, '__invoke'])
+    ->middleware('auth:sanctum');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -20,6 +25,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/tasks', [TaskController::class, 'index']);
     Route::get('/tasks/{task}', [TaskController::class, 'show']);
+
+    Route::post('/push-subscriptions', [PushSubscriptionController::class, 'store']);
+    Route::delete('/push-subscriptions/{id}', [PushSubscriptionController::class, 'destroy']);
 
     Route::get('/task-logs', [TaskLogController::class, 'index']);
     Route::post('/task-logs', [TaskLogController::class, 'store']);

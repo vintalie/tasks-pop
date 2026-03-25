@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Sector, type Shift, type User } from '../services/api';
 import { Speakable } from '../components/Speakable';
+import { useToast } from '../contexts/ToastContext';
 import { getCached, setCached } from '../lib/offlineCache';
 import { isOnline } from '../lib/offline';
 
 export function Settings() {
+  const toast = useToast();
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -17,6 +19,17 @@ export function Settings() {
     name: '', email: '', password: '', role: 'employee' as string,
     sector_id: null as number | null, shift_id: null as number | null,
   });
+
+  const [editingSector, setEditingSector] = useState<Sector | null>(null);
+  const [editSectorName, setEditSectorName] = useState('');
+  const [sectorSaving, setSectorSaving] = useState(false);
+
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editUserForm, setEditUserForm] = useState({
+    name: '', email: '', password: '', role: 'employee' as string,
+    sector_id: null as number | null, shift_id: null as number | null,
+  });
+  const [userSaving, setUserSaving] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -67,7 +80,7 @@ export function Settings() {
       setSectorForm({ name: '' });
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro');
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
     }
   };
 
@@ -83,7 +96,7 @@ export function Settings() {
       setShiftForm({ name: '', start_time: '', end_time: '' });
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro');
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
     }
   };
 
@@ -98,7 +111,7 @@ export function Settings() {
       });
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro');
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
     }
   };
 
@@ -117,7 +130,7 @@ export function Settings() {
       setUserForm({ name: '', email: '', password: '', role: 'employee', sector_id: null, shift_id: null });
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro');
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
     }
   };
 
@@ -127,7 +140,65 @@ export function Settings() {
       await api.users.delete(id);
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro');
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
+    }
+  };
+
+  const handleEditSector = (sector: Sector) => {
+    setEditingSector(sector);
+    setEditSectorName(sector.name);
+  };
+
+  const handleSaveSector = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSector || !editSectorName.trim()) return;
+    setSectorSaving(true);
+    try {
+      await api.sectors.update(editingSector.id, { name: editSectorName.trim() });
+      setEditingSector(null);
+      setEditSectorName('');
+      load();
+      toast.toast('Setor atualizado.', 'success');
+    } catch (err) {
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
+    } finally {
+      setSectorSaving(false);
+    }
+  };
+
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setEditUserForm({
+      name: user.name,
+      email: user.email,
+      password: '',
+      role: user.role,
+      sector_id: user.sector?.id ?? null,
+      shift_id: user.shift?.id ?? null,
+    });
+  };
+
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser || !editUserForm.name.trim() || !editUserForm.email.trim()) return;
+    setUserSaving(true);
+    try {
+      const data: { name: string; email: string; role: string; sector_id: number | null; shift_id: number | null; password?: string } = {
+        name: editUserForm.name.trim(),
+        email: editUserForm.email.trim(),
+        role: editUserForm.role,
+        sector_id: editUserForm.sector_id,
+        shift_id: editUserForm.shift_id,
+      };
+      if (editUserForm.password) data.password = editUserForm.password;
+      await api.users.update(editingUser.id, data);
+      setEditingUser(null);
+      load();
+      toast.toast('Usuário atualizado.', 'success');
+    } catch (err) {
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
+    } finally {
+      setUserSaving(false);
     }
   };
 
@@ -139,14 +210,14 @@ export function Settings() {
         await api.sectors.delete(sector.id);
         load();
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Erro');
+        toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
       }
     } else {
       try {
         await api.sectors.update(sector.id, { active: true });
         load();
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Erro');
+        toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
       }
     }
   };
@@ -159,14 +230,14 @@ export function Settings() {
         await api.shifts.delete(shift.id);
         load();
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Erro');
+        toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
       }
     } else {
       try {
         await api.shifts.update(shift.id, { active: true });
         load();
       } catch (err) {
-        alert(err instanceof Error ? err.message : 'Erro');
+        toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
       }
     }
   };
@@ -218,13 +289,16 @@ export function Settings() {
             {sectors.map((s) => (
               <li key={s.id} className={s.active === false ? 'inactive' : ''}>
                 <span>{s.name}</span>
-                <button
-                  type="button"
-                  className={s.active === false ? 'btn-success btn-sm' : 'btn-danger btn-sm'}
-                  onClick={() => handleToggleSector(s)}
-                >
-                  {s.active === false ? 'Ativar' : 'Desativar'}
-                </button>
+                <div>
+                  <button type="button" className="btn-sm" onClick={() => handleEditSector(s)}>Editar</button>
+                  <button
+                    type="button"
+                    className={s.active === false ? 'btn-success btn-sm' : 'btn-danger btn-sm'}
+                    onClick={() => handleToggleSector(s)}
+                  >
+                    {s.active === false ? 'Ativar' : 'Desativar'}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -302,13 +376,136 @@ export function Settings() {
             {users.map((u) => (
               <li key={u.id}>
                 <span>{u.name} ({u.email}) {u.role === 'manager' ? '👑' : ''} {u.sector && `• ${u.sector.name}`} {u.shift && `• ${u.shift.name}`}</span>
-                {u.role !== 'manager' && (
-                  <button type="button" className="btn-danger btn-sm" onClick={() => handleDeleteUser(u.id)}>Remover</button>
-                )}
+                <div>
+                  <button type="button" className="btn-sm" onClick={() => handleEditUser(u)}>Editar</button>
+                  {u.role !== 'manager' && (
+                    <button type="button" className="btn-danger btn-sm" onClick={() => handleDeleteUser(u.id)}>Remover</button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
         </section>
+      )}
+
+      {editingSector && (
+        <div className="modal-overlay" onClick={() => setEditingSector(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Editar setor</h3>
+              <button type="button" className="modal-close" onClick={() => setEditingSector(null)} aria-label="Fechar">×</button>
+            </div>
+            <form onSubmit={handleSaveSector}>
+              <div className="modal-body">
+                <div className="form-row">
+                  <label>
+                    Nome *
+                    <input
+                      value={editSectorName}
+                      onChange={(e) => setEditSectorName(e.target.value)}
+                      placeholder="Nome do setor"
+                      required
+                      autoFocus
+                    />
+                  </label>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" onClick={() => setEditingSector(null)}>Cancelar</button>
+                  <button type="submit" className="btn-primary" disabled={sectorSaving || !editSectorName.trim()}>
+                    {sectorSaving ? 'Salvando...' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingUser && (
+        <div className="modal-overlay" onClick={() => setEditingUser(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Editar usuário</h3>
+              <button type="button" className="modal-close" onClick={() => setEditingUser(null)} aria-label="Fechar">×</button>
+            </div>
+            <form onSubmit={handleSaveUser}>
+              <div className="modal-body">
+                <div className="form-row">
+                  <label>
+                    Nome *
+                    <input
+                      value={editUserForm.name}
+                      onChange={(e) => setEditUserForm((p) => ({ ...p, name: e.target.value }))}
+                      placeholder="Nome"
+                      required
+                      autoFocus
+                    />
+                  </label>
+                </div>
+                <div className="form-row">
+                  <label>
+                    E-mail *
+                    <input
+                      type="email"
+                      value={editUserForm.email}
+                      onChange={(e) => setEditUserForm((p) => ({ ...p, email: e.target.value }))}
+                      placeholder="E-mail"
+                      required
+                    />
+                  </label>
+                </div>
+                <div className="form-row">
+                  <label>
+                    Nova senha (deixe em branco para manter)
+                    <input
+                      type="password"
+                      value={editUserForm.password}
+                      onChange={(e) => setEditUserForm((p) => ({ ...p, password: e.target.value }))}
+                      placeholder="Nova senha"
+                    />
+                  </label>
+                </div>
+                <div className="form-row">
+                  <label>
+                    Função
+                    <select value={editUserForm.role} onChange={(e) => setEditUserForm((p) => ({ ...p, role: e.target.value }))}>
+                      <option value="employee">Funcionário</option>
+                      <option value="manager">Gerente</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="form-row">
+                  <label>
+                    Setor
+                    <select value={editUserForm.sector_id ?? ''} onChange={(e) => setEditUserForm((p) => ({ ...p, sector_id: e.target.value ? Number(e.target.value) : null }))}>
+                      <option value="">Setor</option>
+                      {sectors.filter((x) => x.active !== false).map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="form-row">
+                  <label>
+                    Turno
+                    <select value={editUserForm.shift_id ?? ''} onChange={(e) => setEditUserForm((p) => ({ ...p, shift_id: e.target.value ? Number(e.target.value) : null }))}>
+                      <option value="">Turno</option>
+                      {shifts.filter((x) => x.active !== false).map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" onClick={() => setEditingUser(null)}>Cancelar</button>
+                  <button type="submit" className="btn-primary" disabled={userSaving}>
+                    {userSaving ? 'Salvando...' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

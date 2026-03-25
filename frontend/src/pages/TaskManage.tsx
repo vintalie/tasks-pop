@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Sector, type Shift, type Task, type TaskCreate, type User } from '../services/api';
 import { useA11y } from '../contexts/A11yContext';
+import { useToast } from '../contexts/ToastContext';
 import { Speakable } from '../components/Speakable';
 import { getCached, setCached } from '../lib/offlineCache';
 import { isOnline } from '../lib/offline';
@@ -14,6 +15,7 @@ const RECURRENCE_OPTIONS = [
 
 export function TaskManage() {
   const { sttEnabled, startListening } = useA11y();
+  const toast = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -28,6 +30,7 @@ export function TaskManage() {
     requires_photo: false,
     requires_observation: false,
     min_interval_minutes: null as number | null,
+    notification_time: null as string | null,
     order: 0,
     sector_id: null,
     shift_id: null,
@@ -103,10 +106,10 @@ export function TaskManage() {
         await api.tasks.create(data);
       }
       setEditing(null);
-      setForm({ name: '', type: 'daily', recurrence: 'daily', sector_id: null, shift_id: null, user_id: null });
+      setForm({ name: '', type: 'daily', recurrence: 'daily', notification_time: null, sector_id: null, shift_id: null, user_id: null });
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro');
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
     }
   };
 
@@ -121,6 +124,7 @@ export function TaskManage() {
       requires_photo: task.requires_photo,
       requires_observation: task.requires_observation ?? false,
       min_interval_minutes: task.min_interval_minutes ?? null,
+      notification_time: (task as { notification_time?: string | null }).notification_time ?? null,
       order: task.order,
       sector_id: task.sector?.id ?? null,
       shift_id: task.shift?.id ?? null,
@@ -134,7 +138,7 @@ export function TaskManage() {
       await api.tasks.delete(id);
       load();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro');
+      toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
     }
   };
 
@@ -273,11 +277,19 @@ export function TaskManage() {
               onChange={(e) => setForm((p) => ({ ...p, min_interval_minutes: e.target.value ? Number(e.target.value) : null }))}
             />
           </label>
+          <label>
+            Horário lembrete
+            <input
+              type="time"
+              value={form.notification_time ?? ''}
+              onChange={(e) => setForm((p) => ({ ...p, notification_time: e.target.value || null }))}
+            />
+          </label>
         </div>
         <div className="form-actions">
           <button type="submit">{editing ? 'Salvar' : 'Criar'}</button>
           {editing && (
-            <button type="button" onClick={() => { setEditing(null); setForm({ name: '', recurrence: 'daily' }); }}>
+            <button type="button" onClick={() => { setEditing(null); setForm({ name: '', recurrence: 'daily', notification_time: null }); }}>
               Cancelar
             </button>
           )}
@@ -297,6 +309,7 @@ export function TaskManage() {
                   {task.requires_photo && ' 📷'}
                   {task.requires_observation && ' 📝'}
                   {task.min_interval_minutes && ` ⏱ ${task.min_interval_minutes}min`}
+                  {(task as { notification_time?: string }).notification_time && ` 🔔 ${(task as { notification_time?: string }).notification_time}`}
                 </span>
               </div>
               <div className="task-actions">

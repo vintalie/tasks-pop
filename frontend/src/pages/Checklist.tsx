@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { api, type Task, type TaskLog } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useRealtimeTasks } from '../hooks/useRealtimeTasks';
 import { useA11y } from '../contexts/A11yContext';
+import { useToast } from '../contexts/ToastContext';
 import { Speakable } from '../components/Speakable';
 import { addToOfflineQueue, base64ToBlob, fileToBase64, getOfflineQueue, isOnline, removeFromOfflineQueue } from '../lib/offline';
 import { getCached, setCached } from '../lib/offlineCache';
+import { getMediaFromLog } from '../lib/mediaUrl';
 
 export function Checklist() {
   const { user } = useAuth();
   const { sttEnabled, startListening } = useA11y();
+  const toast = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [logs, setLogs] = useState<Record<number, TaskLog>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
   const [observation, setObservation] = useState<Record<number, string>>({});
+  const [observationExpanded, setObservationExpanded] = useState<Record<number, boolean>>({});
   const [media, setMedia] = useState<Record<number, File[]>>({});
+  const [mediaModalLog, setMediaModalLog] = useState<TaskLog | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const pendingTaskIdRef = useRef<number | null>(null);
@@ -56,6 +62,21 @@ export function Checklist() {
     };
     load();
   }, [user?.id, today]);
+
+  const refreshLogs = useCallback(async () => {
+    if (!user || !isOnline()) return;
+    try {
+      const logsRes = await api.taskLogs.list({ date: today });
+      const map: Record<number, TaskLog> = {};
+      logsRes.data.forEach((l) => (map[l.task.id] = l));
+      setLogs(map);
+      setCached(`taskLogs-${today}`, logsRes.data);
+    } catch {
+      /* ignore */
+    }
+  }, [user?.id, today]);
+
+  useRealtimeTasks(refreshLogs);
 
   const syncOfflineQueue = useCallback(async () => {
     const queue = getOfflineQueue();
@@ -142,11 +163,11 @@ export function Checklist() {
   const handleComplete = async (task: Task) => {
     const files = media[task.id] ?? [];
     if (task.requires_photo && files.length === 0) {
-      alert('Esta tarefa exige mídia (foto ou vídeo) como comprovante.');
+      toast.toast('Esta tarefa exige mídia (foto ou vídeo) como comprovante.', 'error');
       return;
     }
     if (task.requires_observation && !observation[task.id]?.trim()) {
-      alert('Esta tarefa exige uma observação.');
+      toast.toast('Esta tarefa exige uma observação.', 'error');
       return;
     }
     setSaving(task.id);
@@ -155,13 +176,13 @@ export function Checklist() {
         const mediaData: { base64: string; mime: string }[] = [];
         for (const f of files) {
           if (f.type.startsWith('video/')) {
-            alert('Vídeos não podem ser enviados offline. Conecte à internet.');
+            toast.toast('Vídeos não podem ser enviados offline. Conecte à internet.', 'error');
             setSaving(null);
             return;
           }
           const d = await fileToBase64(f);
           if (!d) {
-            alert('Arquivo muito grande para armazenar offline. Reduza o tamanho ou conecte à internet.');
+            toast.toast('Arquivo muito grande para armazenar offline. Reduza o tamanho ou conecte à internet.', 'error');
             setSaving(null);
             return;
           }
@@ -202,7 +223,7 @@ export function Checklist() {
         });
         setLogs((prev) => ({ ...prev, [task.id]: { id: 0, task: { id: task.id, name: task.name }, user: { id: 0, name: '' }, log_date: today, completed_at: new Date().toISOString(), observation: observation[task.id] || null, photo_url: null, status: 'completed' } }));
       } else {
-        alert(err instanceof Error ? err.message : 'Erro ao registrar');
+        toast.toast(err instanceof Error ? err.message : 'Erro ao registrar', 'error');
       }
     } finally {
       setSaving(null);
@@ -234,7 +255,7 @@ export function Checklist() {
         addToOfflineQueue({ task_id: task.id, status: 'pending' });
         removeFromLogs();
       } else {
-        alert(err instanceof Error ? err.message : 'Erro');
+        toast.toast(err instanceof Error ? err.message : 'Erro', 'error');
       }
     } finally {
       setSaving(null);
@@ -263,114 +284,146 @@ export function Checklist() {
           return (
             <li key={task.id} className={done ? 'done' : ''}>
               <div className="task-header">
-                <span className="task-name">
-                  <Speakable text={task.name}>{task.name}</Speakable>
-                </span>
-                <span className="task-meta">
-                  {(task.sector || task.shift) && (
-                    <span className="badge-meta">
-                      {[task.sector?.name, task.shift?.name].filter(Boolean).join(' • ')}
-                    </span>
-                  )}
-                  {task.requires_photo && <span className="badge">📷 Mídia obrigatória</span>}
-                </span>
+                <div className="task-header-text">
+                  <span className="task-name">
+                    <Speakable text={task.name}>{task.name}</Speakable>
+                  </span>
+                  <span className="task-meta">
+                    {(task.sector || task.shift) && (
+                      <span className="badge-meta">
+                        {[task.sector?.name, task.shift?.name].filter(Boolean).join(' • ')}
+                      </span>
+                    )}
+                    {task.requires_photo && <span className="badge">📷 Mídia obrigatória</span>}
+                  </span>
+                </div>
+                {!done && (
+                  <div className="btn-complete-inline">
+                    <button
+                      className="btn-complete"
+                      onClick={() => handleComplete(task)}
+                      disabled={saving === task.id}
+                    >
+                      <Speakable text={saving === task.id ? 'Salvando...' : 'Concluir'}>
+                        {saving === task.id ? 'Salvando...' : '✓ Concluir'}
+                      </Speakable>
+                    </button>
+                  </div>
+                )}
               </div>
               {!done && (
                 <div className="task-actions">
-                  <div className="observation-row">
-                    <input
-                      type="text"
-                      placeholder={task.requires_observation ? 'Observação (obrigatória)' : 'Observação (opcional)'}
-                      value={observation[task.id] || ''}
-                      onChange={(e) => setObservation((p) => ({ ...p, [task.id]: e.target.value }))}
-                    />
-                    {sttEnabled && (
-                      <button
-                        type="button"
-                        className="stt-dictate-btn"
-                        onClick={() => startListening((t) => setObservation((p) => ({ ...p, [task.id]: (p[task.id] || '') + (p[task.id] ? ' ' : '') + t })))}
-                        title="Ditado por voz"
-                      >
-                        🎤
-                      </button>
-                    )}
-                  </div>
+                  {(task.requires_observation || observationExpanded[task.id] || observation[task.id]) ? (
+                    <div className="observation-row">
+                      <input
+                        type="text"
+                        placeholder={task.requires_observation ? 'Observação (obrigatória)' : 'Observação (opcional)'}
+                        value={observation[task.id] || ''}
+                        onChange={(e) => setObservation((p) => ({ ...p, [task.id]: e.target.value }))}
+                      />
+                      {sttEnabled && (
+                        <button
+                          type="button"
+                          className="stt-dictate-btn"
+                          onClick={() => startListening((t) => setObservation((p) => ({ ...p, [task.id]: (p[task.id] || '') + (p[task.id] ? ' ' : '') + t })))}
+                          title="Ditado por voz"
+                        >
+                          🎤
+                        </button>
+                      )}
+                      {!task.requires_observation && (
+                        <button
+                          type="button"
+                          className="btn-observation-collapse"
+                          onClick={() => {
+                            setObservationExpanded((p) => ({ ...p, [task.id]: false }));
+                            setObservation((p) => ({ ...p, [task.id]: '' }));
+                          }}
+                          title="Ocultar campo"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
                   <div className="task-buttons-row">
-                    {task.requires_photo && (
-                      <div className="photo-upload">
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          multiple
-                          style={{ display: 'none' }}
-                          onChange={(e) => {
-                            const taskId = pendingTaskIdRef.current;
-                            const files = Array.from(e.target.files ?? []);
-                            if (taskId != null && files.length) addMedia(taskId, files);
-                            pendingTaskIdRef.current = null;
-                            e.target.value = '';
-                          }}
-                        />
-                        <input
-                          ref={galleryInputRef}
-                          type="file"
-                          accept="image/*,video/*"
-                          multiple
-                          style={{ display: 'none' }}
-                          onChange={(e) => {
-                            const taskId = pendingTaskIdRef.current;
-                            const files = Array.from(e.target.files ?? []);
-                            if (taskId != null && files.length) addMedia(taskId, files);
-                            pendingTaskIdRef.current = null;
-                            e.target.value = '';
-                          }}
-                        />
-                        <div className="photo-buttons">
-                          <button
-                            type="button"
-                            onClick={() => { pendingTaskIdRef.current = task.id; fileInputRef.current?.click?.(); }}
-                            title="Abrir câmera"
-                          >
-                            {taskMedia.length ? `📷 ${taskMedia.length} selecionada(s)` : '📷 Tirar foto'}
-                          </button>
-                          <button
-                            type="button"
-                            className="photo-gallery-btn"
-                            onClick={() => { pendingTaskIdRef.current = task.id; galleryInputRef.current?.click?.(); }}
-                            title="Enviar pelo dispositivo"
-                          >
-                            🖼️ Enviar pelo dispositivo
-                          </button>
-                          {taskMedia.length > 0 && (
-                            <button type="button" className="photo-clear-btn" onClick={() => clearMedia(task.id)} title="Limpar">
-                              Limpar
+                    <div className="photo-upload">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const taskId = pendingTaskIdRef.current;
+                          const files = Array.from(e.target.files ?? []);
+                          if (taskId != null && files.length) addMedia(taskId, files);
+                          pendingTaskIdRef.current = null;
+                          e.target.value = '';
+                        }}
+                      />
+                      <input
+                        ref={galleryInputRef}
+                        type="file"
+                        accept="image/*,video/*"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const taskId = pendingTaskIdRef.current;
+                          const files = Array.from(e.target.files ?? []);
+                          if (taskId != null && files.length) addMedia(taskId, files);
+                          pendingTaskIdRef.current = null;
+                          e.target.value = '';
+                        }}
+                      />
+                      <div className="photo-buttons">
+                        {task.requires_photo && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => { pendingTaskIdRef.current = task.id; fileInputRef.current?.click?.(); }}
+                              title="Abrir câmera"
+                            >
+                              {taskMedia.length ? `📷 ${taskMedia.length} selecionada(s)` : '📷 Tirar foto'}
                             </button>
-                          )}
-                        </div>
-                        {taskMedia.length > 0 && (
-                          <div className="media-preview">
-                            {taskMedia.map((f, i) => (
-                              <span key={i} className="media-preview-item">
-                                {f.type.startsWith('video/') ? '🎬' : '🖼️'} {f.name}
-                                <button type="button" className="media-remove" onClick={() => removeMedia(task.id, i)} aria-label="Remover">×</button>
-                              </span>
-                            ))}
-                          </div>
+                            <button
+                              type="button"
+                              className="photo-gallery-btn"
+                              onClick={() => { pendingTaskIdRef.current = task.id; galleryInputRef.current?.click?.(); }}
+                              title="Enviar pelo dispositivo"
+                            >
+                              🖼️ Enviar pelo dispositivo
+                            </button>
+                            {taskMedia.length > 0 && (
+                              <button type="button" className="photo-clear-btn" onClick={() => clearMedia(task.id)} title="Limpar">
+                                Limpar
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
-                    )}
-                    <div className="btn-complete-wrap">
-                      <button
-                        className="btn-complete"
-                        onClick={() => handleComplete(task)}
-                        disabled={saving === task.id}
-                      >
-                        <Speakable text={saving === task.id ? 'Salvando...' : 'Concluir'}>
-                          {saving === task.id ? 'Salvando...' : '✓ Concluir'}
-                        </Speakable>
-                      </button>
+                      {!task.requires_observation && !observationExpanded[task.id] && !observation[task.id] && (
+                        <div className="observation-btn-row">
+                          <button
+                            type="button"
+                            className="btn-add-observation-inline"
+                            onClick={() => setObservationExpanded((p) => ({ ...p, [task.id]: true }))}
+                          >
+                            📝 Adicionar observação
+                          </button>
+                        </div>
+                      )}
+                      {taskMedia.length > 0 && (
+                        <div className="media-preview">
+                          {taskMedia.map((f, i) => (
+                            <span key={i} className="media-preview-item">
+                              {f.type.startsWith('video/') ? '🎬' : '🖼️'} {f.name}
+                              <button type="button" className="media-remove" onClick={() => removeMedia(task.id, i)} aria-label="Remover">×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -378,12 +431,14 @@ export function Checklist() {
               {done && (
                 <div className="task-done">
                   <span>Concluído {log.completed_at && new Date(log.completed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                  {(log.media?.length ? log.media : (log.photo_url ? [{ url: log.photo_url, type: 'image' as const }] : [])).map((m, i) =>
-                    m.type === 'video' ? (
-                      <video key={i} src={m.url} controls className="proof-media" />
-                    ) : (
-                      <img key={i} src={m.url} alt="Comprovante" className="proof-img" loading="lazy" decoding="async" />
-                    )
+                  {getMediaFromLog(log).length > 0 && (
+                    <button
+                      type="button"
+                      className="btn-view-media"
+                      onClick={() => setMediaModalLog(log)}
+                    >
+                      🖼️ Conferir imagem
+                    </button>
                   )}
                   <button className="btn-undo" onClick={() => handleUndo(task)} disabled={saving === task.id}>
                     <Speakable text="Desfazer">Desfazer</Speakable>
@@ -394,6 +449,26 @@ export function Checklist() {
           );
         })}
       </ul>
+
+      {mediaModalLog && (
+        <div className="modal-overlay" onClick={() => setMediaModalLog(null)}>
+          <div className="modal-content modal-media" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Comprovante - {mediaModalLog.task.name}</h3>
+              <button type="button" className="modal-close" onClick={() => setMediaModalLog(null)} aria-label="Fechar">×</button>
+            </div>
+            <div className="modal-body media-gallery">
+              {getMediaFromLog(mediaModalLog).map((m, i) =>
+                m.type === 'video' ? (
+                  <video key={i} src={m.url} controls className="modal-media-item" />
+                ) : (
+                  <img key={i} src={m.url} alt={`Comprovante ${i + 1}`} className="modal-media-item" />
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

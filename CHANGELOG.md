@@ -1,5 +1,68 @@
 # Changelog
 
+## [2025-03-20] (atualização 23 - Sistema de notificações implementado)
+
+### Added
+
+- **Web Push**: Infraestrutura completa para notificações com app fechado
+  - Migration `notification_time` em tasks, tabela `push_subscriptions`
+  - Endpoint `POST /api/push-subscriptions`, `GET /vapid-public-key`
+  - Service Worker com handler `push` (injectManifest)
+  - Registro de subscription após login
+- **Lembrete de tarefa**: Command `tasks:check-reminders` (a cada 5 min) + Job `SendTaskReminderNotification`
+- **Setor completou**: `SectorCompletionService` + Job `SendSectorCompletedNotification` (Web Push para gerentes)
+- **Real-time**: Evento `TaskLogCreated`, canal Pusher `tasks-daily`, hook `useRealtimeTasks` em Checklist e Dashboard
+- **Campo horário lembrete** no formulário de tarefa (TaskManage)
+
+### Changed
+
+- **docs/PLANO_NOTIFICACOES_PUSHER.md**: Atualizado com separação Pusher (UI) vs Web Push (notificações)
+
+---
+## [2025-03-20] (atualização 21 - Fix mídia não salva)
+
+### Fixed
+
+- **MediaStorageService**: fallback para disco local quando Cloudinary falha ou não retorna URL; evita mídia ser descartada silenciosamente
+- **TaskLogController**: retorna 422 quando mídia obrigatória é enviada mas nenhum arquivo foi salvo; logs para rastrear upload (`TaskLog store: media`, `armazenamento falhou para arquivo`)
+- **collectMediaFiles**: suporte a `media` como UploadedFile único e fallback para `media.0`, `media.1`
+
+---
+## [2025-03-20] (atualização 20 - Mídia no Dashboard e colunas)
+
+### Fixed
+
+- **Dashboard**: mídia (fotos) enviadas pelo funcionário passa a ser exibida para o gerente; normalizeMediaUrls no backend garante URLs absolutas; frontend trata media_paths e URLs relativas
+- **Dashboard**: colunas "Setor/Turno" e "Status" com min-width ampliada para melhor leitura
+
+---
+## [2025-03-20] (atualização 19 - Plano de melhorias Tasks POP)
+
+### Added
+
+- **Toast/tratamento de erros unificado**: ToastContext com provider global; toasts para erro, sucesso e info; substituição de `alert()` em Checklist, Dashboard, TaskManage, Settings
+- **UI correção de logs**: botão "Corrigir" no Dashboard por linha de log; modal com novo status e motivo obrigatório; chamada a `api.taskLogs.correct`
+- **Edição de usuários**: botão "Editar" em Settings/Usuários; modal com nome, e-mail, senha (opcional), função, setor, turno
+- **Edição de setores**: botão "Editar" em Settings/Setores; modal para alterar nome do setor
+- **TaskVisibilityService**: serviço centralizado para regras de visibilidade de tarefas (sector/shift/user)
+
+### Changed
+
+- **Dashboard**: filtros Setor, Turno e Tarefa aplicados à listagem (task_id enviado à API; setor/turno filtrados no cliente)
+- **Dashboard**: catch silencioso no onOnline substituído por toast em caso de erro ao recarregar
+- **TaskLogController**: validação de `observation` obrigatória quando `requires_observation` e status completed; autorização via TaskVisibilityService antes de registrar log
+- **TaskController::show**: restringe acesso a tarefas visíveis ao usuário (retorna 404 se não visível)
+- **VoiceAssistantTools**: getTaskDetails filtra tarefas com regras de visibilidade
+- **App**: envolvido por ToastProvider; estilos .toast-container e .toast no App.css
+
+### Fixed
+
+- **Dashboard**: filtros existentes na UI agora afetam os dados exibidos
+- **Segurança**: funcionários não podem registrar conclusão de tarefas de outros setores/turnos; nem acessar detalhes via assistente de voz
+- **Backend**: validação de observação obrigatória no controller (não apenas frontend)
+
+---
+
 ## [2025-03-20] (atualização 17 - .cpanel.yml)
 
 ### Added

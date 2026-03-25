@@ -20,6 +20,7 @@ class Task extends Model
         'requires_photo',
         'requires_observation',
         'min_interval_minutes',
+        'notification_time',
         'order',
         'active',
         'sector_id',

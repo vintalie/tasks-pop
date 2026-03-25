@@ -64,7 +64,8 @@ class MediaStorageService
         try {
             $config = $this->getCloudinaryConfig();
             if (! $config) {
-                return null;
+                \Log::warning('MediaStorage: Cloudinary não configurado, usando disco local');
+                return $this->storeLocal($file, $type);
             }
             $cloudinary = new Cloudinary($config);
             $result = $cloudinary->uploadApi()->upload(
@@ -77,12 +78,24 @@ class MediaStorageService
 
             $url = $result['secure_url'] ?? null;
 
-            return $url ? ['url' => $url, 'type' => $type] : null;
+            if ($url) {
+                return ['url' => $url, 'type' => $type];
+            }
+            \Log::warning('MediaStorage: Cloudinary sem secure_url, usando disco local');
+            return $this->storeLocal($file, $type);
         } catch (\Throwable $e) {
             report($e);
+            \Log::error('MediaStorage: Cloudinary falhou, fallback para disco local', ['error' => $e->getMessage(), 'file' => $file->getClientOriginalName()]);
 
-            return null;
+            return $this->storeLocal($file, $type);
         }
+    }
+
+    protected function storeLocal(UploadedFile $file, string $type): ?array
+    {
+        $path = $file->store('task-logs', 'public');
+
+        return $path ? ['url' => Storage::disk('public')->url($path), 'type' => $type] : null;
     }
 
     protected function buildCloudinaryUrl(): ?string

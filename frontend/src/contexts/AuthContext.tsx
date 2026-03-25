@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, type User } from '../services/api';
 import { isOnline } from '../lib/offline';
+import { registerPushSubscription } from '../lib/webPush';
 
 const USER_CACHE_KEY = 'tasks-pop-user';
 
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((u) => {
         setUser(u);
         setCachedUser(u);
+        registerPushSubscription().catch(() => {});
       })
       .catch(() => {
         if (isOnline()) {
@@ -61,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('token', access_token);
     setCachedUser(u);
     setUser(u);
+    registerPushSubscription().catch(() => {});
   };
 
   const logout = async () => {

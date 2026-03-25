@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type PendingTask, type RankingItem, type Sector, type Shift, type Task, type TaskLog, type User } from '../services/api';
 import { getCached, setCached } from '../lib/offlineCache';
 import { isOnline } from '../lib/offline';
+import { useToast } from '../contexts/ToastContext';
+import { getMediaFromLog } from '../lib/mediaUrl';
+import { useRealtimeTasks } from '../hooks/useRealtimeTasks';
 
 export function Dashboard() {
+  const toast = useToast();
   const [logs, setLogs] = useState<TaskLog[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
@@ -18,25 +22,57 @@ export function Dashboard() {
   const [filterTask, setFilterTask] = useState<string>('');
   const [tasks, setTasks] = useState<{ id: number; name: string }[]>([]);
   const [ranking, setRanking] = useState<{ period: string; data: import('../services/api').RankingItem[] } | null>(null);
-
+  const [mediaModalLog, setMediaModalLog] = useState<TaskLog | null>(null);
+  const [observationModal, setObservationModal] = useState<{ taskName: string; text: string } | null>(null);
+  const [correctModalLog, setCorrectModalLog] = useState<TaskLog | null>(null);
+  const [correctStatus, setCorrectStatus] = useState<'completed' | 'pending'>('pending');
+  const [correctReason, setCorrectReason] = useState('');
+  const [correcting, setCorrecting] = useState(false);
   useEffect(() => {
     const params: Record<string, string> = { date };
     if (filterUser) params.user_id = filterUser;
-    const cacheKey = `taskLogs-dashboard-${date}-${filterUser || 'all'}`;
+    if (filterTask) params.task_id = filterTask;
+    const cacheKey = `taskLogs-dashboard-${date}-${filterUser || 'all'}-${filterTask || 'all'}`;
     const load = async () => {
       try {
-        const r = await api.taskLogs.list(params as { date?: string; user_id?: number });
-        setLogs(r.data);
+        const r = await api.taskLogs.list(params as { date?: string; user_id?: number; task_id?: number });
+        let data = r.data;
+        if (filterSector) data = data.filter((log) => log.user.sector?.id === Number(filterSector));
+        if (filterShift) data = data.filter((log) => log.user.shift?.id === Number(filterShift));
+        setLogs(data);
         if (isOnline()) setCached(cacheKey, r.data);
       } catch {
         if (!isOnline()) {
           const cached = getCached<TaskLog[]>(cacheKey);
-          if (cached) setLogs(cached);
+          if (cached) {
+            let data = cached;
+            if (filterSector) data = data.filter((log) => log.user.sector?.id === Number(filterSector));
+            if (filterShift) data = data.filter((log) => log.user.shift?.id === Number(filterShift));
+            setLogs(data);
+          }
         } else setLogs([]);
       }
     };
     load();
-  }, [date, filterUser]);
+  }, [date, filterUser, filterTask, filterSector, filterShift]);
+
+  const refreshDashboardLogs = useCallback(async () => {
+    if (!isOnline()) return;
+    try {
+      const params: Record<string, string> = { date };
+      if (filterUser) params.user_id = filterUser;
+      if (filterTask) params.task_id = filterTask;
+      const r = await api.taskLogs.list(params as { date?: string; user_id?: number; task_id?: number });
+      let data = r.data;
+      if (filterSector) data = data.filter((log) => log.user.sector?.id === Number(filterSector));
+      if (filterShift) data = data.filter((log) => log.user.shift?.id === Number(filterShift));
+      setLogs(data);
+    } catch {
+      /* ignore */
+    }
+  }, [date, filterUser, filterTask, filterSector, filterShift]);
+
+  useRealtimeTasks(refreshDashboardLogs);
 
   useEffect(() => {
     const load = async () => {
@@ -120,9 +156,10 @@ export function Dashboard() {
     const onOnline = () => {
       const params: Record<string, string> = { date };
       if (filterUser) params.user_id = filterUser;
-      const cacheKey = `taskLogs-dashboard-${date}-${filterUser || 'all'}`;
+      if (filterTask) params.task_id = filterTask;
+      const cacheKey = `taskLogs-dashboard-${date}-${filterUser || 'all'}-${filterTask || 'all'}`;
       Promise.all([
-        api.taskLogs.list(params as { date?: string; user_id?: number }),
+        api.taskLogs.list(params as { date?: string; user_id?: number; task_id?: number }),
         api.users.list(),
         api.sectors.list(),
         api.shifts.list(),
@@ -130,7 +167,10 @@ export function Dashboard() {
         api.pendingTasks.list(),
         api.users.ranking('week'),
       ]).then(([logsRes, u, s, sh, t, pendingRes, rankRes]) => {
-        setLogs(logsRes.data);
+        let logsData = logsRes.data;
+        if (filterSector) logsData = logsData.filter((log) => log.user.sector?.id === Number(filterSector));
+        if (filterShift) logsData = logsData.filter((log) => log.user.shift?.id === Number(filterShift));
+        setLogs(logsData);
         setUsers(u.data);
         setSectors(s.data);
         setShifts(sh.data);
@@ -145,15 +185,40 @@ export function Dashboard() {
         setCached('tasks-all', t.data);
         setCached('pendingTasks', { data: pendingRes.data, date: pendingRes.date });
         setCached('ranking-week', rankRes);
-      }).catch(() => {});
+      }).catch((err) => {
+        toast.toast(err instanceof Error ? err.message : 'Erro ao recarregar dados', 'error');
+      });
     };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
-  }, [date, filterUser]);
+  }, [date, filterUser, filterTask, filterSector, filterShift]);
 
   const completed = logs.filter((l) => l.status === 'completed').length;
   const total = logs.length;
   const pending = total - completed;
+
+  const handleCorrect = async () => {
+    if (!correctModalLog || !correctReason.trim()) return;
+    setCorrecting(true);
+    try {
+      await api.taskLogs.correct(correctModalLog.id, {
+        status: correctStatus,
+        correction_reason: correctReason.trim(),
+      });
+      setLogs((prev) =>
+        prev.map((l) =>
+          l.id === correctModalLog.id ? { ...l, status: correctStatus } : l
+        )
+      );
+      setCorrectModalLog(null);
+      setCorrectReason('');
+      toast.toast('Log corrigido com sucesso.', 'success');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao corrigir');
+    } finally {
+      setCorrecting(false);
+    }
+  };
 
   const handleExport = async (format: 'csv' | 'xlsx') => {
     try {
@@ -164,7 +229,7 @@ export function Dashboard() {
         format,
       });
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao exportar');
+      toast.toast(err instanceof Error ? err.message : 'Erro ao exportar', 'error');
     }
   };
 
@@ -264,6 +329,7 @@ export function Dashboard() {
           <button type="button" onClick={() => handleExport('xlsx')}>Exportar Excel</button>
         </div>
       </div>
+
       <div className="table-wrap">
         <table>
           <thead>
@@ -273,31 +339,150 @@ export function Dashboard() {
               <th>Setor / Turno</th>
               <th>Horário</th>
               <th>Status</th>
+              <th>Mídia</th>
               <th>Observação</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
             {logs.length === 0 && !loading ? (
-              <tr><td colSpan={6}>Nenhum registro para esta data.</td></tr>
+              <tr><td colSpan={8}>Nenhum registro para esta data.</td></tr>
             ) : (
-              logs.map((log) => (
-                <tr key={log.id}>
-                  <td>{log.task.name}</td>
-                  <td>{log.user.name}</td>
-                  <td>{[log.user.sector?.name, log.user.shift?.name].filter(Boolean).join(' • ') || '-'}</td>
-                  <td>{log.completed_at ? new Date(log.completed_at).toLocaleTimeString('pt-BR') : '-'}</td>
-                  <td>
-                    <span className={`status status-${log.status}`}>
-                      {log.status === 'completed' ? '✓ Feito' : '○ Pendente'}
-                    </span>
-                  </td>
-                  <td>{log.observation || '-'}</td>
-                </tr>
-              ))
+              logs.map((log) => {
+                const mediaFiles = getMediaFromLog(log);
+                const hasMedia = mediaFiles.length > 0;
+                const hasObservation = !!log.observation?.trim();
+                return (
+                  <tr key={log.id}>
+                    <td>{log.task.name}</td>
+                    <td>{log.user.name}</td>
+                    <td>{[log.user.sector?.name, log.user.shift?.name].filter(Boolean).join(' • ') || '-'}</td>
+                    <td>{log.completed_at ? new Date(log.completed_at).toLocaleTimeString('pt-BR') : '-'}</td>
+                    <td>
+                      <span className={`status status-${log.status}`}>
+                        {log.status === 'completed' ? '✓ Feito' : '○ Pendente'}
+                      </span>
+                    </td>
+                    <td>
+                      {hasMedia ? (
+                        <button
+                          type="button"
+                          className="btn-view-media"
+                          onClick={() => setMediaModalLog(log)}
+                        >
+                          Ver foto
+                        </button>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td>
+                      {hasObservation ? (
+                        <button
+                          type="button"
+                          className="btn-view-observation"
+                          onClick={() => setObservationModal({ taskName: log.task.name, text: log.observation! })}
+                        >
+                          Ver observação
+                        </button>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-view-media"
+                        onClick={() => {
+                          setCorrectModalLog(log);
+                          setCorrectStatus(log.status === 'completed' ? 'pending' : 'completed');
+                          setCorrectReason('');
+                        }}
+                      >
+                        Corrigir
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
+
+      {mediaModalLog && (
+        <div className="modal-overlay" onClick={() => setMediaModalLog(null)}>
+          <div className="modal-content modal-media" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Comprovante - {mediaModalLog.task.name}</h3>
+              <button type="button" className="modal-close" onClick={() => setMediaModalLog(null)} aria-label="Fechar">×</button>
+            </div>
+            <div className="modal-body media-gallery">
+              {getMediaFromLog(mediaModalLog).map((m, i) =>
+                m.type === 'video' ? (
+                  <video key={i} src={m.url} controls className="modal-media-item" />
+                ) : (
+                  <img key={i} src={m.url} alt={`Comprovante ${i + 1}`} className="modal-media-item" />
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {observationModal && (
+        <div className="modal-overlay" onClick={() => setObservationModal(null)}>
+          <div className="modal-content modal-observation" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Observação - {observationModal.taskName}</h3>
+              <button type="button" className="modal-close" onClick={() => setObservationModal(null)} aria-label="Fechar">×</button>
+            </div>
+            <div className="modal-body">
+              <p className="observation-text">{observationModal.text}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {correctModalLog && (
+        <div className="modal-overlay" onClick={() => setCorrectModalLog(null)}>
+          <div className="modal-content modal-correction" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Corrigir registro - {correctModalLog.task.name}</h3>
+              <button type="button" className="modal-close" onClick={() => setCorrectModalLog(null)} aria-label="Fechar">×</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-row">
+                <label>
+                  Novo status
+                  <select value={correctStatus} onChange={(e) => setCorrectStatus(e.target.value as 'completed' | 'pending')}>
+                    <option value="pending">Pendente</option>
+                    <option value="completed">Concluído</option>
+                  </select>
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
+                  Motivo da correção *
+                  <textarea
+                    value={correctReason}
+                    onChange={(e) => setCorrectReason(e.target.value)}
+                    placeholder="Informe o motivo da correção..."
+                    rows={3}
+                    required
+                  />
+                </label>
+              </div>
+              <div className="modal-actions">
+                <button type="button" onClick={() => setCorrectModalLog(null)}>Cancelar</button>
+                <button type="button" className="btn-primary" onClick={handleCorrect} disabled={correcting || !correctReason.trim()}>
+                  {correcting ? 'Salvando...' : 'Corrigir'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

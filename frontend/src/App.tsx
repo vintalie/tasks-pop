@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import { A11yProvider } from './contexts/A11yContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import { A11yToggle } from './components/A11yToggle';
 import { ReloadPrompt } from './components/ReloadPrompt';
 import { VoiceAssistantWidget } from './components/VoiceAssistantWidget';
@@ -58,8 +59,9 @@ function AppLayout() {
 export default function App() {
   return (
     <A11yProvider>
-      <AuthProvider>
-        <BrowserRouter>
+      <ToastProvider>
+        <AuthProvider>
+          <BrowserRouter>
           <Suspense fallback={<div className="loading-screen">Carregando...</div>}>
             <Routes>
               <Route path="/login" element={<Login />} />
@@ -72,7 +74,8 @@ export default function App() {
           <ReloadPrompt />
           <VoiceAssistantWidgetWrapper />
         </BrowserRouter>
-    </AuthProvider>
+        </AuthProvider>
+      </ToastProvider>
     </A11yProvider>
   );
 }
