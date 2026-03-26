@@ -10,6 +10,10 @@
 
 - **README.md** e **docs/README.md**: links para o compilado e instrução de regeneração.
 
+### Fixed
+
+- **docs/modelo-dados.md** / **COMPILADO.md**: diagrama Mermaid `erDiagram` compatível com o renderizador do GitHub (atributos sempre `tipo nome`; substituídas linhas inválidas `timestamps`; `time`/`json` evitados onde causavam parse errors).
+
 ---
 ## [2026-03-25]
 

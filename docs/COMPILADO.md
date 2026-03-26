@@ -1,6 +1,6 @@
 # Documentação completa — Tasks POP (compilado)
 
-> **Compilado gerado em 2026-03-26T01:48:12-03:00.** A fonte canónica para edição continua a ser os ficheiros individuais em `docs/` e o `README.md` na raiz. Para regenerar: `./scripts/compile-docs.sh`.
+> **Compilado gerado em 2026-03-26T01:52:38-03:00.** A fonte canónica para edição continua a ser os ficheiros individuais em `docs/` e o `README.md` na raiz. Para regenerar: `./scripts/compile-docs.sh`.
 
 
 ---
@@ -536,7 +536,8 @@ erDiagram
     string role
     bigint sector_id FK
     bigint shift_id FK
-    timestamps
+    datetime created_at
+    datetime updated_at
   }
 
   sectors {
@@ -544,17 +545,19 @@ erDiagram
     string name
     string slug UK
     boolean active
-    timestamps
+    datetime created_at
+    datetime updated_at
   }
 
   shifts {
     bigint id PK
     string name
     string slug UK
-    time start_time
-    time end_time
+    string start_time
+    string end_time
     boolean active
-    timestamps
+    datetime created_at
+    datetime updated_at
   }
 
   tasks {
@@ -567,13 +570,14 @@ erDiagram
     boolean requires_photo
     boolean requires_observation
     int min_interval_minutes
-    time notification_time
+    string notification_time
     int order
     boolean active
     bigint sector_id FK
     bigint shift_id FK
     bigint user_id FK
-    timestamps
+    datetime created_at
+    datetime updated_at
   }
 
   task_logs {
@@ -584,21 +588,23 @@ erDiagram
     datetime completed_at
     text observation
     string photo_path
-    json media_paths
+    string media_paths
     string status
     datetime corrected_at
     text correction_reason
     bigint corrected_by FK
-    timestamps
+    datetime created_at
+    datetime updated_at
   }
 
   push_subscriptions {
     bigint id PK
     bigint user_id FK
     string endpoint
-    json keys
+    string keys
     string user_agent
-    timestamps
+    datetime created_at
+    datetime updated_at
   }
 ```
 
@@ -1538,6 +1544,10 @@ VAPID_PRIVATE_KEY=
 ### Changed
 
 - **README.md** e **docs/README.md**: links para o compilado e instrução de regeneração.
+
+### Fixed
+
+- **docs/modelo-dados.md** / **COMPILADO.md**: diagrama Mermaid `erDiagram` compatível com o renderizador do GitHub (atributos sempre `tipo nome`; substituídas linhas inválidas `timestamps`; `time`/`json` evitados onde causavam parse errors).
 
 ---
 ## [2026-03-25]
