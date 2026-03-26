@@ -76,6 +76,7 @@ tasks-pop/
 
 ## Documentação
 
+- **[Documentação completa (compilado único)](docs/COMPILADO.md)** — README, índice, requisitos, arquitetura, modelo de dados, especificação, API, deploy, decisões, plano de notificações e CHANGELOG (regenerar: `./scripts/compile-docs.sh`)
 - **[Índice completo da documentação (Diátaxis)](docs/README.md)** — ponto de entrada para tutorials, how-to, referência, exploração e documentos de produto
 - [Requisitos, casos de uso e catálogo de funcionalidades](docs/requisitos-e-casos-de-uso.md)
 - [Modelo de dados e diagramas (Mermaid)](docs/modelo-dados.md)

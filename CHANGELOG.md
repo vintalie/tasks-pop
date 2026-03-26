@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026-03-26]
+
+### Added
+
+- **Documentação**: [docs/COMPILADO.md](docs/COMPILADO.md) — ficheiro único com README raiz, índice `docs/`, requisitos, arquitetura, modelo de dados, especificação, API, deploy, decisões, plano Pusher e CHANGELOG; script [scripts/compile-docs.sh](scripts/compile-docs.sh) para regenerar.
+
+### Changed
+
+- **README.md** e **docs/README.md**: links para o compilado e instrução de regeneração.
+
+---
 ## [2026-03-25]
 
 ### Added

@@ -2,6 +2,8 @@
 
 Este diretório segue a ideia do **[Diátaxis](https://diataxis.fr/)**: separar o material pelo que o leitor pretende fazer (aprender, resolver um problema, consultar um contrato ou entender o contexto). Para visão de produto, requisitos e modelo de dados, use os documentos listados em **Produto e análise**.
 
+**Leitura contínua:** [COMPILADO.md](COMPILADO.md) — um único ficheiro com o README da raiz, este índice, requisitos, arquitetura, modelo de dados, especificação, API, deploy, decisões, plano de notificações e CHANGELOG (gerado por `./scripts/compile-docs.sh`).
+
 ---
 
 ## Tutorial (aprender passo a passo)
@@ -54,6 +56,7 @@ Este diretório segue a ideia do **[Diátaxis](https://diataxis.fr/)**: separar 
 
 | Objetivo | Onde ir |
 |----------|---------|
+| Ler toda a documentação num só ficheiro | [COMPILADO.md](COMPILADO.md) |
 | Subir o projeto em dev | [README](../README.md) |
 | Corrigir 403 em mídia em produção | [deployment.md](deployment.md) |
 | Ver regras de visibilidade / negócio | [requisitos-e-casos-de-uso.md](requisitos-e-casos-de-uso.md) + [architecture.md](architecture.md) |
