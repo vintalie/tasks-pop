@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026-03-25]
+
+### Added
+
+- **Documentação**: índice [docs/README.md](docs/README.md) (Diátaxis); [docs/modelo-dados.md](docs/modelo-dados.md) (entidades, ER e diagramas Mermaid); [docs/requisitos-e-casos-de-uso.md](docs/requisitos-e-casos-de-uso.md) (RF, RNF, casos de uso, catálogo de funcionalidades).
+- **Checklist**: botão **Vídeo** (`capture` + `accept` alinhado ao backend mp4/webm/mov); barra lateral com progresso de upload (XHR), animação de entrada/saída, estado “Concluído” visível 4s antes de fechar; toast de sucesso com 4s e animação de saída.
+- **api.taskLogs.create**: suporte a `onUploadProgress` via `XMLHttpRequest` quando há ficheiros.
+
+### Changed
+
+- **README.md**: secção Documentação com link para o índice `docs/README.md` e novos documentos.
+- **docs/architecture.md**: estrutura do projeto corrigida (`api/` em vez de `backend/`); link para `modelo-dados.md`.
+- **docs/especificacao-sistema.md**: secção 2.10 (síntese de boas práticas); tabela da secção 3 com novos docs.
+- **ToastContext**: IDs com `useRef`; duração configurável (`durationMs`); classe `toast-leaving` para animação ao desaparecer.
+- **docs/deployment.md**: explicação da causa (discos `local` vs `public` e `serve`) e outros motivos de 403/404.
+
+### Fixed
+
+- **403 em `/storage/task-logs/...`**: o disco `local` tinha `serve => true`, pelo que o Laravel registava `GET /storage/*` sobre `storage/app/private` e `ServeFile` recusava pedidos sem assinatura. Passa a `serve => false` no `local` e `serve => true` no disco `public` (ficheiros em `storage/app/public`), alinhado com o Laravel 11+.
+
+---
 ## [2025-03-20] (atualização 23 - Sistema de notificações implementado)
 
 ### Added

@@ -76,6 +76,10 @@ tasks-pop/
 
 ## Documentação
 
+- **[Índice completo da documentação (Diátaxis)](docs/README.md)** — ponto de entrada para tutorials, how-to, referência, exploração e documentos de produto
+- [Requisitos, casos de uso e catálogo de funcionalidades](docs/requisitos-e-casos-de-uso.md)
+- [Modelo de dados e diagramas (Mermaid)](docs/modelo-dados.md)
+- [Especificação do sistema, boas práticas de documentação e PWA](docs/especificacao-sistema.md)
 - [Arquitetura](docs/architecture.md)
 - [Decisões técnicas](docs/decisions.md)
 - [API](docs/api.md)

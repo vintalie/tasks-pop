@@ -5,9 +5,16 @@ import { useRealtimeTasks } from '../hooks/useRealtimeTasks';
 import { useA11y } from '../contexts/A11yContext';
 import { useToast } from '../contexts/ToastContext';
 import { Speakable } from '../components/Speakable';
+import { UploadProgressPanel, type UploadProgressPanelState } from '../components/UploadProgressPanel';
 import { addToOfflineQueue, base64ToBlob, fileToBase64, getOfflineQueue, isOnline, removeFromOfflineQueue } from '../lib/offline';
 import { getCached, setCached } from '../lib/offlineCache';
 import { getMediaFromLog } from '../lib/mediaUrl';
+
+function formatUploadFileLabel(files: File[]): string {
+  if (files.length === 0) return '';
+  if (files.length === 1) return files[0].name;
+  return `${files.length} arquivos · ${files[0].name}`;
+}
 
 export function Checklist() {
   const { user } = useAuth();
@@ -23,7 +30,12 @@ export function Checklist() {
   const [mediaModalLog, setMediaModalLog] = useState<TaskLog | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const pendingTaskIdRef = useRef<number | null>(null);
+  const [uploadPanel, setUploadPanel] = useState<{
+    data: UploadProgressPanelState;
+    exiting: boolean;
+  } | null>(null);
   const today = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
@@ -77,6 +89,16 @@ export function Checklist() {
   }, [user?.id, today]);
 
   useRealtimeTasks(refreshLogs);
+
+  useEffect(() => {
+    if (!uploadPanel?.data || uploadPanel.data.phase !== 'done' || uploadPanel.exiting) {
+      return;
+    }
+    const t = window.setTimeout(() => {
+      setUploadPanel((p) => (p && p.data && !p.exiting ? { ...p, exiting: true } : p));
+    }, 4000);
+    return () => window.clearTimeout(t);
+  }, [uploadPanel?.data?.phase, uploadPanel?.exiting]);
 
   const syncOfflineQueue = useCallback(async () => {
     const queue = getOfflineQueue();
@@ -198,15 +220,50 @@ export function Checklist() {
         setSaving(null);
         return;
       }
-      const res = await api.taskLogs.create({
-        task_id: task.id,
-        status: 'completed',
-        observation: observation[task.id] || undefined,
-        media: files.length ? files : undefined,
-      });
+      if (files.length > 0) {
+        setUploadPanel({
+          data: {
+            phase: 'uploading',
+            percent: 0,
+            taskName: task.name,
+            fileLabel: formatUploadFileLabel(files),
+          },
+          exiting: false,
+        });
+      }
+      const res = (await api.taskLogs.create(
+        {
+          task_id: task.id,
+          status: 'completed',
+          observation: observation[task.id] || undefined,
+          media: files.length ? files : undefined,
+        },
+        files.length > 0
+          ? {
+              onUploadProgress: (pct) => {
+                setUploadPanel((p) => {
+                  if (!p || p.exiting) return p;
+                  return {
+                    ...p,
+                    data: { ...p.data, phase: 'uploading', percent: pct },
+                  };
+                });
+              },
+            }
+          : undefined
+      )) as { data: TaskLog };
       setLogs((prev) => ({ ...prev, [task.id]: res.data }));
       setMedia((p) => ({ ...p, [task.id]: [] }));
+      if (files.length > 0) {
+        setUploadPanel((p) =>
+          p && !p.exiting
+            ? { ...p, data: { ...p.data, phase: 'done', percent: 100 } }
+            : p
+        );
+        toast.toast('Comprovante enviado com sucesso.', 'success', 4000);
+      }
     } catch (err) {
+      setUploadPanel(null);
       if (!isOnline()) {
         const mediaData: { base64: string; mime: string }[] = [];
         for (const f of files) {
@@ -377,23 +434,45 @@ export function Checklist() {
                           e.target.value = '';
                         }}
                       />
+                      <input
+                        ref={videoInputRef}
+                        type="file"
+                        accept="video/mp4,video/webm,video/quicktime,video/*"
+                        capture="environment"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const taskId = pendingTaskIdRef.current;
+                          const files = Array.from(e.target.files ?? []);
+                          if (taskId != null && files.length) addMedia(taskId, files);
+                          pendingTaskIdRef.current = null;
+                          e.target.value = '';
+                        }}
+                      />
                       <div className="photo-buttons">
                         {task.requires_photo && (
                           <>
                             <button
                               type="button"
                               onClick={() => { pendingTaskIdRef.current = task.id; fileInputRef.current?.click?.(); }}
-                              title="Abrir câmera"
+                              title="Abrir câmera (foto)"
                             >
                               {taskMedia.length ? `📷 ${taskMedia.length} selecionada(s)` : '📷 Tirar foto'}
                             </button>
                             <button
                               type="button"
+                              className="photo-video-btn"
+                              onClick={() => { pendingTaskIdRef.current = task.id; videoInputRef.current?.click?.(); }}
+                              title="Gravar ou escolher vídeo"
+                            >
+                              🎬 Vídeo
+                            </button>
+                            <button
+                              type="button"
                               className="photo-gallery-btn"
                               onClick={() => { pendingTaskIdRef.current = task.id; galleryInputRef.current?.click?.(); }}
-                              title="Enviar pelo dispositivo"
+                              title="Fotos ou vídeos do dispositivo"
                             >
-                              🖼️ Enviar pelo dispositivo
+                              🖼️ Galeria / arquivos
                             </button>
                             {taskMedia.length > 0 && (
                               <button type="button" className="photo-clear-btn" onClick={() => clearMedia(task.id)} title="Limpar">
@@ -437,7 +516,7 @@ export function Checklist() {
                       className="btn-view-media"
                       onClick={() => setMediaModalLog(log)}
                     >
-                      🖼️ Conferir imagem
+                      🖼️ Conferir mídia
                     </button>
                   )}
                   <button className="btn-undo" onClick={() => handleUndo(task)} disabled={saving === task.id}>
@@ -469,6 +548,12 @@ export function Checklist() {
           </div>
         </div>
       )}
+
+      <UploadProgressPanel
+        state={uploadPanel?.data ?? null}
+        exiting={uploadPanel?.exiting ?? false}
+        onExitAnimationEnd={() => setUploadPanel(null)}
+      />
     </div>
   );
 }

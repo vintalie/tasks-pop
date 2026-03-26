@@ -33,7 +33,9 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Não servir em /storage: o disco "local" aponta para app/private; com serve=true
+            // o Laravel registra GET /storage/* nesse disco e ServeFile exige assinatura (403).
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],
@@ -43,6 +45,8 @@ return [
             'root' => storage_path('app/public'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
+            // Servir ficheiros em /storage/* via Laravel (ServeFile) a partir de app/public
+            'serve' => true,
             'throw' => false,
             'report' => false,
         ],

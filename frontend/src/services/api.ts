@@ -82,7 +82,10 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
-    create: (data: { task_id: number; status: string; observation?: string; photo?: File; media?: File[] }) => {
+    create: (
+      data: { task_id: number; status: string; observation?: string; photo?: File; media?: File[] },
+      options?: { onUploadProgress?: (percent: number) => void }
+    ) => {
       const formData = new FormData();
       formData.append('task_id', String(data.task_id));
       formData.append('status', data.status);
@@ -93,14 +96,47 @@ export const api = {
       }
 
       const token = getToken();
-      return fetch(`${API_BASE}/task-logs`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      }).then(async (res) => {
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.message || 'Erro ao registrar');
-        return json;
+      const hasProgress = typeof options?.onUploadProgress === 'function';
+
+      if (!hasProgress) {
+        return fetch(`${API_BASE}/task-logs`, {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: formData,
+        }).then(async (res) => {
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.message || 'Erro ao registrar');
+          return json;
+        });
+      }
+
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${API_BASE}/task-logs`);
+        xhr.responseType = 'json';
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            options.onUploadProgress!(Math.min(100, Math.round((100 * e.loaded) / e.total)));
+          }
+        });
+        xhr.addEventListener('load', () => {
+          const json = xhr.response;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(json);
+          } else {
+            const msg =
+              json && typeof json === 'object' && 'message' in json
+                ? String((json as { message?: string }).message)
+                : 'Erro ao registrar';
+            reject(new Error(msg || 'Erro ao registrar'));
+          }
+        });
+        xhr.addEventListener('error', () => reject(new Error('Erro de rede')));
+        xhr.addEventListener('abort', () => reject(new Error('Envio cancelado')));
+        xhr.send(formData);
       });
     },
   },

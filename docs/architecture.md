@@ -8,7 +8,7 @@ Sistema de checklists operacionais (POP) para controle de tarefas diárias/seman
 
 | Camada | Tecnologia | Justificativa |
 |--------|------------|---------------|
-| Backend | Laravel 11 + PHP 8.2 | API REST, migrations, auth |
+| Backend | Laravel 13 + PHP 8.2+ | API REST, migrations, auth |
 | Autenticação | Laravel Sanctum | Tokens API, adequado para PWA/mobile |
 | Frontend | React 18 + Vite | PWA, SPA responsiva |
 | Banco | SQLite (dev) / PostgreSQL (prod) | Flexibilidade |
@@ -18,7 +18,7 @@ Sistema de checklists operacionais (POP) para controle de tarefas diárias/seman
 
 ```
 tasks-pop/
-├── backend/          # Laravel API
+├── api/              # Laravel API
 │   ├── app/
 │   │   ├── Http/Controllers/Api/
 │   │   ├── Models/
@@ -35,12 +35,14 @@ tasks-pop/
 └── CHANGELOG.md
 ```
 
+Modelo de dados detalhado (entidades, ER, diagramas de contexto e sequência): **[modelo-dados.md](modelo-dados.md)**.
+
 ## Fluxo de Dados
 
 ```
-┌─────────────┐     JWT      ┌─────────────┐     REST      ┌─────────────┐
+┌─────────────┐   Bearer     ┌─────────────┐     REST      ┌─────────────┐
 │   React     │ ◄──────────► │   Laravel   │ ◄──────────►  │  Database   │
-│   PWA       │              │   API      │               │  SQLite/PG  │
+│   PWA       │   (Sanctum)  │   API        │               │  SQLite/PG  │
 └─────────────┘              └─────────────┘               └─────────────┘
      │                              │
      │                              │ Storage (fotos)
@@ -69,6 +71,8 @@ tasks-pop/
 - Task 1:N TaskLog
 - Task pode ter `requires_photo` (obrigatório para tarefas críticas)
 
+Detalhe de campos, cardinalidades e diagramas: **[modelo-dados.md](modelo-dados.md)**. Requisitos e casos de uso: **[requisitos-e-casos-de-uso.md](requisitos-e-casos-de-uso.md)**.
+
 ### Filtro de tarefas por setor/turno
 
 Funcionário vê apenas tarefas onde:
@@ -79,7 +83,7 @@ Gerente vê todas as tarefas.
 
 ## Segurança
 
-- JWT com refresh token
+- Laravel Sanctum (tokens Bearer na API)
 - CORS configurado para frontend
 - Rate limiting em endpoints públicos
 - Validação de upload (tipo, tamanho)
@@ -87,14 +91,16 @@ Gerente vê todas as tarefas.
 
 ## PWA e Offline
 
-- **Service Worker** (vite-plugin-pwa + Workbox): precache de assets, NetworkFirst para API, CacheFirst para imagens
-- **Fila offline** (localStorage): task logs com observação e foto (base64) enfileirados quando offline, sincronizados ao reconectar
-- **Página offline**: fallback customizado quando navegação falha sem rede
-- **Manifest**: ícones PNG 192/512, meta Apple, theme-color, installável
+Descrição detalhada (manifest, service worker, cache, Web Push, offline): **[especificacao-sistema.md](especificacao-sistema.md)** (secção PWA).
+
+- **Service Worker** ([`frontend/src/sw.ts`](../frontend/src/sw.ts), vite-plugin-pwa + Workbox): precache de assets, fallback SPA para `index.html`, NetworkFirst para API, CacheFirst para imagens/storage/Cloudinary
+- **Atualização**: `ReloadPrompt` (nova versão / app pronto offline)
+- **Fila offline** (localStorage): task logs com observação e mídia em base64 (imagens) quando offline; sincronização ao reconectar
+- **Manifest**: ícones 192/512 e maskable, `standalone`, tema escuro, instalável
+- **Web Push**: handler `push` no SW + registo VAPID no cliente (além de Pusher/Echo para tempo real na UI — ver [PLANO_NOTIFICACOES_PUSHER.md](PLANO_NOTIFICACOES_PUSHER.md))
 
 ## Escalabilidade Futura
 
 - [ ] Background Sync API (sync mais robusto em segundo plano)
-- [ ] Push notifications (Firebase)
 - [ ] Multi-tenancy (SaaS)
-- [ ] Exportação PDF/Excel
+- [ ] Exportação PDF adicional além de CSV/XLSX já suportados na API
